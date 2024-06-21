@@ -15,7 +15,7 @@ from typing import Any
 import requests
 from requests.auth import HTTPBasicAuth
 import logging as log
-from xml.dom.minidom import parse, parseString
+from xml.dom.minidom import parseString
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
@@ -79,7 +79,7 @@ class SplunkHelper(object):
             return ret, None
 
         if response.status_code == 401:
-            log.error("Unable to connect to Splunk. Please check administrative credentials")
+            log.error(f"Unable to connect to Splunk. Please check administrative credentials. URI : {self._uri(uri=uri)}")
 
         elif response.status_code == 200 or response.status_code == 201:
             ret = True
