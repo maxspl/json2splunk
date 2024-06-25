@@ -13,6 +13,7 @@
 
 ## Requirements
 
+- Run only on `Linux host`
 - Python 3.7 or newer
 - External libraries: `argparse`, `json`, `logging`, `os`, `re`, `time`, `datetime`, `functools`, `multiprocessing`, `pathlib`, `polars`, `yaml`, `mpire`, `splunk_http_event_collector`
 - `splunk_http_event_collector` modified to remove multithreading as `json2splunk` is already using multiprocessing 
@@ -34,7 +35,8 @@
    Update `splunk_configuration.yml` with your Splunk instance details:
    ```yaml
    splunk:
-     url: {splunk_url}
+     host: {splunk_FQDN_or_IP}
+     user: {splunk_user}
      password: {splunk_password}
      port: {splunk_port} # Default is 8000
      mport: {splunk_mport} # Default is 8089

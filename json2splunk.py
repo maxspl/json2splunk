@@ -249,7 +249,7 @@ class Json2Splunk(object):
             log.warning("Testing mode enabled. NO data will be injected into Splunk")
 
         log.info("Init SplunkHelper")
-        self._sh = SplunkHelper(splunk_url=splunk_config["url"],
+        self._sh = SplunkHelper(splunk_url=splunk_config["host"],
                                 splunk_port=splunk_config["mport"],
                                 splunk_ssl_verify=splunk_config["ssl"] == "True",
                                 username=splunk_config["user"],
@@ -272,7 +272,7 @@ class Json2Splunk(object):
 
                 # Instantiate HEC class and configure
                 self._hec_server = http_event_collector(token=hect,
-                                                        http_event_server=splunk_config["url"])
+                                                        http_event_server=splunk_config["host"])
                 self._hec_server.http_event_server_ssl = True
                 self._hec_server.index = index
                 self._hec_server.input_type = "json"
