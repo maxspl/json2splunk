@@ -216,7 +216,6 @@ class http_event_collector:
             # Fill in local hostname if not manually populated
             if 'host' not in payload:
                 payload.update({"host":self.host})
-
             # If eventtime in epoch not passed as optional argument and not in payload, use current system time in epoch
             if not eventtime and 'time' not in payload:
                 eventtime = str(round(time.time(),3))

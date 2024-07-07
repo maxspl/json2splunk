@@ -1,11 +1,12 @@
 # json2splunk
 
-`json2splunk` is a Python script designed to process and ingest JSON formatted log files into Splunk. This script leverages multiprocessing to efficiently handle multiple files and integrates deeply with Splunk's HTTP Event Collector (HEC) to push data.
+`json2splunk` is a Python script designed to process and ingest JSON formatted log files into Splunk. This script leverages multiprocessing to efficiently handle multiple files and integrates with Splunk's HTTP Event Collector (HEC) to push data.
 
 
 
 ## Features
 
+- **CSV files**: Supports also csv files.
 - **Multiprocessing Support**: Utilizes multiple CPUs to process files concurrently with mpire lib (https://github.com/sybrenjansen/mpire).
 - **Flexible File Matching**: Configurable file matching rules based on file name patterns and path suffixes, allowing selective processing of files.
 - **Splunk Integration**: Automates the creation of Splunk indices and HEC tokens, ensuring that data is ingested smoothly and efficiently into Splunk.
@@ -165,6 +166,11 @@ prefetch:
     timestamp_format: "%Y-%m-%d %H:%M:%S" # Specify the timestamp format
 application:
     path_suffix: output/app
+    sourcetype: _json
+    host_rex: (^[\w-]+)--
+hives:
+    name_rex: \.csv$
+    path_suffix: hives
     sourcetype: _json
     host_rex: (^[\w-]+)--
 ```

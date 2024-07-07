@@ -14,6 +14,7 @@ import operator
 import os
 import re
 import time
+import csv
 from datetime import datetime
 from functools import reduce
 from multiprocessing import cpu_count
@@ -181,7 +182,7 @@ class FileMatcher:
             relative_path = os.path.join(directory, "test_files_to_index.json")
             log.info(f"test mode - writing {relative_path} file.")
             absolute_path = os.path.abspath(relative_path)  
-            self.df.write_json(absolute_path, row_oriented=True)
+            self.df.write_json(absolute_path)  # Polars changed,  row-oriented  by default now
 
     def create_list_of_tuples(self):
         """
@@ -318,34 +319,61 @@ class Json2Splunk(object):
 
         try:
             with open(file_path, "r") as file_stream:
+                file_extension = os.path.splitext(file_path)[1].lower()
+                
                 # Prepare initial Splunk payload
                 payload = {
                     "source": file_path,
                     "sourcetype": sourcetype,
                     "host": host
                 }
+                    
+                if file_extension == '.json' or file_extension == '.jsonl':
+                    # Iterate over each line in the file
+                    for record_line in file_stream:
+                        try:
+                            record = json.loads(record_line)
+                            # Process timestamp if applicable
+                            epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
+                            # Process host_path if applicable
+                            host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
+                            payload["event"] = record
+                            if epoch_time:
+                                payload["time"] = epoch_time  
+                            if host_from_path:
+                                payload["host"] = host_from_path
+                            self._send_to_splunk(payload)
+                        except json.JSONDecodeError as e:
+                            log.error(f"Record error in {file_path}. Error: {str(e)}")
+                            continue
 
-                # Iterate over each line in the file
-                for record_line in file_stream:
-                    try:
-                        record = json.loads(record_line)
-                        # Process timestamp if applicable
-                        epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
-                        # Process host_path if applicable
-                        host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
-                        payload["event"] = record
-                        if epoch_time:
-                            payload["time"] = epoch_time  
-                        if host_from_path:
-                            payload["host"] = host_from_path
-                        self._send_to_splunk(payload)
-                    except json.JSONDecodeError as e:
-                        log.error(f"Record error in {file_path}. Error: {str(e)}")
-                        continue
+                    # Flush remaining events
+                    self._flush_splunk_batch()
+                    return True
 
-                # Flush remaining events
-                self._flush_splunk_batch()
-                return True
+                elif file_extension == '.csv':
+                    file_stream = (line.replace('\x00', '') for line in file_stream)
+                    csv_reader = csv.DictReader(file_stream)
+                    for record_line in csv_reader:
+                        try:
+                            record = record_line
+                            # Process timestamp if applicable
+                            epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
+                            # Process host_path if applicable
+                            host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
+                            payload["event"] = record
+                            if epoch_time:
+                                payload["time"] = epoch_time  
+                            if host_from_path:
+                                payload["host"] = host_from_path
+                            self._send_to_splunk(payload)
+                        except json.JSONDecodeError as e:
+                            log.error(f"Record error in {file_path}. Error: {str(e)}")
+                            continue
+
+                    # Flush remaining events
+                    self._flush_splunk_batch()
+                    return True
 
         except Exception as e:
             log.error(f"Failed to process file {file_path}. Error: {str(e)}")
