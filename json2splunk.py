@@ -15,6 +15,7 @@ import os
 import re
 import time
 import csv
+import chardet
 from datetime import datetime
 from dateutil.parser import parse
 from functools import reduce
@@ -92,7 +93,7 @@ class FileMatcher:
         name_pattern = criteria.get('name_rex')
         path_suffix = criteria.get('path_suffix')
         # Check if file name matches the name regex pattern
-        if name_pattern and not re.search(name_pattern, file_path.name):
+        if name_pattern and not re.search(name_pattern, str(file_path)):
             return False
         # Check if file path matches the path suffix
         if path_suffix and not str(file_path.parent).endswith(path_suffix.rstrip('/')):
@@ -142,7 +143,7 @@ class FileMatcher:
                     record['host'] = 'Unknown'
                     if host_rex:  # Try to extract host from file name if host_rex defined
                         criteria = self.config[matched_artifacts[0]]
-                        host_match = re.search(host_rex, file_name)
+                        host_match = re.search(host_rex, str(file_path))
                         host = host_match.group(1) if host_match else 'Unknown'
                         record['host'] = host
                     elif host_path:  # If host_path defined, host will be extracted from json event in send_jsonfile_to_splunk
@@ -201,10 +202,10 @@ class FileMatcher:
         """
         Print statistics about file matches to the log.
         """
-        log.info(f"Number of files that match nothing: {self.no_match_count}")
-        log.info(f"Number of files that match multiple patterns: {self.multi_match_count}")
+        log.info(f"Number of files that matched nothing: {self.no_match_count}")
+        log.info(f"Number of files that matched multiple patterns: {self.multi_match_count}")
         for artifact, count in self.pattern_match_count.items():
-            log.info(f"Number of files that match pattern '{artifact}': {count}")
+            log.info(f"Number of files that matched pattern '{artifact}': {count}")
 
     
 class Json2Splunk(object):
@@ -286,6 +287,22 @@ class Json2Splunk(object):
                 return True
 
         return False
+    
+    def _detect_encoding(self, file_path, chunk_size=1024):
+        """
+        Get encoding type from a chunk of the file.
+
+        Args
+            file_path (str): Path of the file.
+            chunk_size (int): Size of the chunk to read.
+        Returns:
+            str: Encoding name.
+        """
+        with open(file_path, 'rb') as file:
+            raw_data = file.read(chunk_size)
+            result = chardet.detect(raw_data)
+            encoding = result['encoding']
+            return encoding
 
     def _get_from_dict(self, dataDict: dict, mapList: list):
         """
@@ -303,7 +320,7 @@ class Json2Splunk(object):
             log.error(f"failed to extract the value from these keys: {mapList}. Error: {str(e)}")
             value_extracted = None
         return value_extracted
-        
+
     def send_jsonfile_to_splunk(self, input_tuple: tuple):
         """
         Attempts to ingest a specified file into Splunk, adding sourcetype, host, timestamp_path, and timestamp_format details.
@@ -314,6 +331,16 @@ class Json2Splunk(object):
         Returns:
             bool: True if the file was successfully ingested, False otherwise.
         """
+        def process_records(record):
+            epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
+            host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
+            payload["event"] = record
+            if epoch_time:
+                payload["time"] = epoch_time  
+            if host_from_path:
+                payload["host"] = host_from_path
+            self._send_to_splunk(payload)
+
         file_path, sourcetype, host, timestamp_path, timestamp_format, host_path = input_tuple
         
         # Check if file is empty
@@ -322,63 +349,46 @@ class Json2Splunk(object):
             return False
 
         try:
-            with open(file_path, "r") as file_stream:
-                file_extension = os.path.splitext(file_path)[1].lower()
+            file_extension = os.path.splitext(file_path)[1].lower()
+            payload = {
+                "source": file_path,
+                "sourcetype": sourcetype,
+                "host": host
+            }
+            
+            if file_extension == '.json' or file_extension == '.jsonl':
+                # Detect encoding for JSON files
+                encoding = self._detect_encoding(file_path)
                 
-                # Prepare initial Splunk payload
-                payload = {
-                    "source": file_path,
-                    "sourcetype": sourcetype,
-                    "host": host
-                }
-                    
-                if file_extension == '.json' or file_extension == '.jsonl':
-                    # Iterate over each line in the file
+                with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     for record_line in file_stream:
                         try:
                             record = json.loads(record_line)
-                            # Process timestamp if applicable
-                            epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
-                            # Process host_path if applicable
-                            host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
-                            payload["event"] = record
-                            if epoch_time:
-                                payload["time"] = epoch_time  
-                            if host_from_path:
-                                payload["host"] = host_from_path
-                            self._send_to_splunk(payload)
+                            process_records(record)
                         except json.JSONDecodeError as e:
                             log.error(f"Record error in {file_path}. Error: {str(e)}")
                             continue
 
-                    # Flush remaining events
                     self._flush_splunk_batch()
                     return True
 
-                elif file_extension == '.csv':
+            elif file_extension == '.csv':
+                # Detect encoding for CSV files
+                encoding = self._detect_encoding(file_path)
+                
+                with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     file_stream = (line.replace('\x00', '') for line in file_stream)
                     csv_reader = csv.DictReader(file_stream)
                     for record_line in csv_reader:
                         try:
                             record = record_line
-                            # Process timestamp if applicable
-                            epoch_time = self._extract_epoch_time(record, timestamp_path, timestamp_format) if timestamp_path else None
-                            # Process host_path if applicable
-                            host_from_path = self._get_from_dict(record, host_path.split('.')) if host_path else None
-                            payload["event"] = record
-                            if epoch_time:
-                                payload["time"] = epoch_time  
-                            if host_from_path:
-                                payload["host"] = host_from_path
-                            self._send_to_splunk(payload)
+                            process_records(record)
                         except json.JSONDecodeError as e:
                             log.error(f"Record error in {file_path}. Error: {str(e)}")
                             continue
 
-                    # Flush remaining events
                     self._flush_splunk_batch()
                     return True
-
         except Exception as e:
             log.error(f"Failed to process file {file_path}. Error: {str(e)}")
             return False

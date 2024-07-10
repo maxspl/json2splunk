@@ -8,7 +8,7 @@
 
 - **CSV files**: Supports also csv files.
 - **Multiprocessing Support**: Utilizes multiple CPUs to process files concurrently with mpire lib (https://github.com/sybrenjansen/mpire).
-- **Flexible File Matching**: Configurable file matching rules based on file name patterns and path suffixes, allowing selective processing of files.
+- **Flexible File Matching**: Configurable file matching rules based on file name/path patterns and path suffixes, allowing selective processing of files.
 - **Splunk Integration**: Automates the creation of Splunk indices and HEC tokens, ensuring that data is ingested smoothly and efficiently into Splunk.
 - **Test Mode**: Allows running the script in a test configuration where no data is actually sent to Splunk, useful for debugging and validation.
 
@@ -48,13 +48,13 @@
    Edit `indexer_patterns.yml` to define the patterns for the files you want to ingest:
    ```yaml
    evtx:
-     name_rex: # regex matching the file name (optional if path_suffix is set)
+     name_rex: # regex matching the file name (optional if path_suffix is set). Regex applied on FILE PATH
      path_suffix: # suffix path to files to index (optional if path_suffix is set). Match ending path. Ex: If "path_suffix: evtx" will match of files ending wih .jsonl under <whatever is the path>/evtx/
      sourcetype: # Splunk sourcetype (optional)
      timestamp_path: # path to the json key containing the event timestamp. Populates Splunk _time field. Ex: "Event.System.TimeCreated.#attributes.SystemTime"  (optional)
      timestamp_format: # format of the timestamp extracted. Ex: "%Y-%m-%dT%H:%M:%S.%fZ" (optional)
      host_path: # path to the json key containing the event host. Populates Splunk host field. Ex: Event.System.Computer (optional)
-     host_rex: # regex to extract the hostname for the filename. Populates Splunk host field. (optional)
+     host_rex: # regex to extract the hostname for the filename or the file path. Populates Splunk host field. (optional)
    ```
 
 ## Usage
@@ -143,7 +143,7 @@ Let's ingest these files:
 
 ### Patterns Configuration (`indexer_patterns.yml`)
 
-This YAML file is crucial for specifying which files `json2splunk.py` should process. You can define multiple criteria based on file name regex patterns and path suffixes:
+This YAML file is crucial for specifying which files `json2splunk.py` should process. You can define multiple criteria based on file name (or file path) regex patterns and path suffixes:
 Each entry specifies a unique pattern to match certain files with specific processing rules for Splunk ingestion.
 
 **Warning:** Fields required: sourcetype, one of: name_rex, path_suffix
