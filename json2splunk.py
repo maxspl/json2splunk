@@ -16,6 +16,7 @@ import re
 import time
 import csv
 from datetime import datetime
+from dateutil.parser import parse
 from functools import reduce
 from multiprocessing import cpu_count
 from pathlib import Path
@@ -188,8 +189,11 @@ class FileMatcher:
         """
         Convert the dataframe into a list of tuples, each representing a file's details.
         """
-        selected_df = self.df.select(['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path'])
-        
+        if not self.df.is_empty():
+            selected_df = self.df[['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path']]
+        else:
+            log.warning("It seems that the patterns matched nothing.")
+            exit()  
         list_of_dicts = selected_df.to_dicts()
         self.list_of_tuples = list(tuple(d.values()) for d in list_of_dicts)
 
@@ -382,9 +386,20 @@ class Json2Splunk(object):
     def _extract_epoch_time(self, record, timestamp_path, timestamp_format):
         try:
             timestamp = self._get_from_dict(record, timestamp_path.split('.'))
-            return datetime.strptime(timestamp, timestamp_format).timestamp()
+            if not timestamp:
+                log.error(f"Timestamp {timestamp_path} has not been extracted from record {record}.")
+                return None
+            try:
+                return datetime.strptime(timestamp, timestamp_format).timestamp()
+            except Exception as e:
+                log.error(f'Failed to convert timestamp {timestamp} with format {timestamp_format}. Error: {str(e)}. Trying auto mode...')
+                try:
+                    return parse(timestamp).timestamp()
+                except Exception as e:
+                    log.error(f'Failed to convert timestamp with auto mode. Error: {str(e)}.')
+                    return None
         except Exception as e:
-            log.error(f"Failed to convert timestamp. Error: {str(e)}")
+            log.error(f"Failed to extract timestamp. Error: {str(e)}")
             return None
 
     def _send_to_splunk(self, payload):
