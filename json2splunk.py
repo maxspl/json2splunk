@@ -176,7 +176,7 @@ class FileMatcher:
             log.error(f"Input directory {input_dir} does not exist.")
             exit()
         records = self._scan_directory(input_dir)
-        self.df = pl.DataFrame(records)
+        self.df = pl.DataFrame(records, infer_schema_length=500)
 
         # Write DF to disk if test mode
         if self.test_mode:
@@ -338,7 +338,7 @@ class Json2Splunk(object):
             if epoch_time:
                 payload["time"] = epoch_time  
             if host_from_path:
-                payload["host"] = host_from_path
+                payload["host"] = host_from_path.lower().split('.')[0]
             self._send_to_splunk(payload)
 
         file_path, sourcetype, host, timestamp_path, timestamp_format, host_path = input_tuple
@@ -353,9 +353,8 @@ class Json2Splunk(object):
             payload = {
                 "source": file_path,
                 "sourcetype": sourcetype,
-                "host": host
+                "host": host.lower().split('.')[0]
             }
-            
             if file_extension == '.json' or file_extension == '.jsonl':
                 # Detect encoding for JSON files
                 encoding = self._detect_encoding(file_path)
