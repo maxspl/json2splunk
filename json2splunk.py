@@ -191,7 +191,7 @@ class FileMatcher:
         Convert the dataframe into a list of tuples, each representing a file's details.
         """
         if not self.df.is_empty():
-            selected_df = self.df[['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path']]
+            selected_df = self.df[['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path' ,'artifact_name']]
         else:
             log.warning("It seems that the patterns matched nothing.")
             exit()  
@@ -339,9 +339,10 @@ class Json2Splunk(object):
                 payload["time"] = epoch_time  
             if host_from_path:
                 payload["host"] = host_from_path.lower().split('.')[0]
+            payload["event"]["artifact"] = artifact_name
             self._send_to_splunk(payload)
 
-        file_path, sourcetype, host, timestamp_path, timestamp_format, host_path = input_tuple
+        file_path, sourcetype, host, timestamp_path, timestamp_format, host_path, artifact_name = input_tuple
         
         # Check if file is empty
         if os.stat(file_path).st_size == 0:
