@@ -62,7 +62,7 @@ class FileMatcher:
         self.pattern_match_count = {artifact: 0 for artifact in self.config}
         self.no_match_count = 0
         self.multi_match_count = 0
-        
+
     @staticmethod
     def load_config(config_path: str):
         """
@@ -125,7 +125,7 @@ class FileMatcher:
                     if self.match_file(file_path, criteria):
                         matched_artifacts.append(artifact)
                         matched_criterias.append(criteria)
-                    
+
                 if matched_artifacts:
                     record = {
                         'file_path': str(file_path),
@@ -136,7 +136,7 @@ class FileMatcher:
                         'timestamp_format': matched_criterias[0].get('timestamp_format', ''),
                         'host_path': None
                     }
-                    
+
                     # Determine host from the first matched pattern
                     host_path = matched_criterias[0].get('host_path', '')
                     host_rex = matched_criterias[0].get('host_rex', '')
@@ -148,7 +148,7 @@ class FileMatcher:
                         record['host'] = host
                     elif host_path:  # If host_path defined, host will be extracted from json event in send_jsonfile_to_splunk
                         record['host_path'] = host_path
-                        
+
                     records.append(record)
 
                     # Update pattern match count for each matched artifact
@@ -207,7 +207,7 @@ class FileMatcher:
         for artifact, count in self.pattern_match_count.items():
             log.info(f"Number of files that matched pattern '{artifact}': {count}")
 
-    
+
 class Json2Splunk(object):
     """
     Ingest all matching files into Splunk. 
@@ -287,7 +287,7 @@ class Json2Splunk(object):
                 return True
 
         return False
-    
+
     def _detect_encoding(self, file_path, chunk_size=1024):
         """
         Get encoding type from a chunk of the file.
@@ -343,7 +343,7 @@ class Json2Splunk(object):
             self._send_to_splunk(payload)
 
         file_path, sourcetype, host, timestamp_path, timestamp_format, host_path, artifact_name = input_tuple
-        
+
         # Check if file is empty
         if os.stat(file_path).st_size == 0:
             log.debug(f"File {file_path} is empty.")
@@ -359,7 +359,7 @@ class Json2Splunk(object):
             if file_extension == '.json' or file_extension == '.jsonl':
                 # Detect encoding for JSON files
                 encoding = self._detect_encoding(file_path)
-                
+
                 with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     for record_line in file_stream:
                         try:
@@ -375,7 +375,7 @@ class Json2Splunk(object):
             elif file_extension == '.csv':
                 # Detect encoding for CSV files
                 encoding = self._detect_encoding(file_path)
-                
+
                 with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     file_stream = (line.replace('\x00', '') for line in file_stream)
                     csv_reader = csv.DictReader(file_stream)
@@ -392,14 +392,36 @@ class Json2Splunk(object):
         except Exception as e:
             log.error(f"Failed to process file {file_path}. Error: {str(e)}")
             return False
-        
+
     def _extract_epoch_time(self, record, timestamp_path, timestamp_format):
+        """ Extract epoch time from record.
+
+        Args:
+            record (jsonl): Record to extract timestamp from.
+            timestamp_path (string): Path to the timestamp in the record.
+            timestamp_format (string): Format of the timestamp.
+
+        Returns:
+            int: Epoch time extracted from the record.
+        """
         try:
             timestamp = self._get_from_dict(record, timestamp_path.split('.'))
             if not timestamp:
                 log.error(f"Timestamp {timestamp_path} has not been extracted from record {record}.")
                 return None
             try:
+                # If timestamp is already in epoch format
+                if not timestamp_format or timestamp_format == r'%s':
+                    try:
+                        int_timestamp = int(timestamp)
+                        if int_timestamp and len(str(timestamp)) >= 10:
+                            if int_timestamp < 0:
+                                log.error(f"Timestamp {int_timestamp} is negative.")
+                                return None
+                            # Consider the timestamp is in milliseconds or more
+                            return int_timestamp / 10**((len(str(timestamp)) - 10))
+                    except Exception as e:
+                        log.error(f"Failed to convert timestamp {timestamp} with format {timestamp_format}.")
                 return datetime.strptime(timestamp, timestamp_format).timestamp()
             except Exception as e:
                 log.error(f'Failed to convert timestamp {timestamp} with format {timestamp_format}. Error: {str(e)}. Trying auto mode...')
@@ -437,7 +459,7 @@ class Json2Splunk(object):
             list_of_tuples = [(item,) for item in input_tuples]
             for result in pool.imap(self.send_jsonfile_to_splunk, list_of_tuples):
                 pass
-        
+
         end_time2 = time.time()
         log.info(f"Ingesting finished in {end_time2 - start_time2:.2f} seconds")
 
@@ -454,7 +476,7 @@ def load_yaml_config(filepath):
         log.error(f"Error parsing YAML file: {exc}")
         exit()
 
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--verbosity", help="increase output verbosity", choices=LOG_VERBOSITY, default='INFO')
@@ -471,33 +493,33 @@ if __name__ == "__main__":
                             Dataframe containing matches files is created for debugging purpose.")
 
     parser.add_argument('--config_spl', help="Splunk config file. Default is splunk_configuration.yml.", default='splunk_configuration.yml')
-    
+
     parser.add_argument('--indexer_patterns', help="Configuration for files pattern definition. Default is indexer_patterns.yml.", default='indexer_patterns.yml')
 
     args = parser.parse_args()
-    
+
     log.basicConfig(format=LOG_FORMAT, level=LOG_VERBOSITY[args.verbosity], datefmt='%Y-%m-%d %I:%M:%S')
     # log.getLogger("urllib3").setLevel(log.WARNING)
     start_time = time.time()
     log.info(f"Nb of CPUs : {args.nb_cpu}")
-        
+
     # Build dataframe with all files to index    
     file_matcher = FileMatcher(args.indexer_patterns, args.test)
     file_matcher.create_dataframe(args.input)
     file_matcher.print_statistics()
     # Extract tuples ('file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format')
     file_matcher.create_list_of_tuples()
-    
+
     input_identification_end_time = time.time()
     log.info(f"Input identification finished in {input_identification_end_time - start_time:.3f} seconds")
 
-    # Start indexing files    
+    # Start indexing files
     j2s = Json2Splunk()
     if j2s.configure(index=args.index, nb_cpu=args.nb_cpu, testing=args.test, config_spl=args.config_spl):
         j2s.ingest(input_tuples=file_matcher.list_of_tuples)
     end_time = time.time()
 
     log.info(f"Finished in {end_time - start_time:.2f} seconds")
-    
+
 # curl -k  https://host.docker.internal:8089/services/data/inputs/http
 
