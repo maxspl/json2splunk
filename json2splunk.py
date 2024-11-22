@@ -397,42 +397,70 @@ class Json2Splunk(object):
         """ Extract epoch time from record.
 
         Args:
-            record (jsonl): Record to extract timestamp from.
-            timestamp_path (string): Path to the timestamp in the record.
-            timestamp_format (string): Format of the timestamp.
+            record (dict): Record to extract timestamp from.
+            timestamp_path (str): Path to the timestamp in the record (dot-separated for nested keys).
+            timestamp_format (str, optional): Format of the timestamp. Defaults to None.
 
         Returns:
-            int: Epoch time extracted from the record.
+            float: Epoch time extracted from the record, or None if extraction fails.
         """
+        def parse_epoch_timestamp(timestamp):
+            """Parse an epoch timestamp."""
+            try:
+                int_timestamp = int(timestamp)
+                if int_timestamp < 0:
+                    log.debug(f"Timestamp {int_timestamp} is negative.")
+                    return None
+                # Consider the timestamp is in milliseconds or more
+                return int_timestamp / 10 ** (len(str(timestamp)) - 10)
+            except ValueError:
+                return None
+
+        def parse_formatted_timestamp(timestamp, fmt):
+            """Parse a formatted timestamp using the provided format."""
+            try:
+                return datetime.strptime(timestamp, fmt).timestamp()
+            except ValueError:
+                return None
+
+        def parse_auto_timestamp(timestamp):
+            """Parse a timestamp automatically."""
+            log.debug(f'Failed to convert timestamp {timestamp} with format {timestamp_format}. Trying auto mode...')
+            try:
+                return parse(timestamp).timestamp()
+            except Exception as e:
+                log.error(f"Failed to convert timestamp with auto mode. Error: {str(e)}.")
+                return None
+
         try:
             timestamp = self._get_from_dict(record, timestamp_path.split('.'))
             if not timestamp:
                 log.error(f"Timestamp {timestamp_path} has not been extracted from record {record}.")
                 return None
-            try:
-                # If timestamp is already in epoch format
-                if not timestamp_format or timestamp_format == r'%s':
-                    try:
-                        int_timestamp = int(timestamp)
-                        if int_timestamp and len(str(timestamp)) >= 10:
-                            if int_timestamp < 0:
-                                log.error(f"Timestamp {int_timestamp} is negative.")
-                                return None
-                            # Consider the timestamp is in milliseconds or more
-                            return int_timestamp / 10**((len(str(timestamp)) - 10))
-                    except Exception as e:
-                        log.error(f"Failed to convert timestamp {timestamp} with format {timestamp_format}.")
-                return datetime.strptime(timestamp, timestamp_format).timestamp()
-            except Exception as e:
-                log.error(f'Failed to convert timestamp {timestamp} with format {timestamp_format}. Error: {str(e)}. Trying auto mode...')
-                try:
-                    return parse(timestamp).timestamp()
-                except Exception as e:
-                    log.error(f'Failed to convert timestamp with auto mode. Error: {str(e)}.')
-                    return None
         except Exception as e:
             log.error(f"Failed to extract timestamp. Error: {str(e)}")
             return None
+        
+        try:
+            # Try parsing as epoch format
+            epoch_time = parse_epoch_timestamp(timestamp)
+            if epoch_time is not None:
+                return epoch_time
+
+            # Try parsing using the provided format
+            if timestamp_format and timestamp_format != r'%s':
+                epoch_time = parse_formatted_timestamp(timestamp, timestamp_format)
+                if epoch_time is not None:
+                    return epoch_time
+                else:
+                    log.error(f"Failed to convert timestamp {timestamp} with format {timestamp_format}.")
+            # Try auto-parsing
+            return parse_auto_timestamp(timestamp)
+
+        except Exception as e:
+            log.error(f"Failed to extract timestamp. Error: {str(e)}")
+            return None
+
 
     def _send_to_splunk(self, payload):
         if not self._is_test:
