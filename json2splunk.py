@@ -21,6 +21,7 @@ from dateutil.parser import parse
 from functools import reduce
 from multiprocessing import cpu_count
 from pathlib import Path
+import sys 
 
 # Third-party imports
 import polars as pl
@@ -38,6 +39,8 @@ LOG_VERBOSITY = {
     'CRITICAL': log.CRITICAL,
 }
 
+# Increase CSV field size limit to handle large fields
+csv.field_size_limit(sys.maxsize)
 
 class FileMatcher:
     def __init__(self, config: str, test: bool):
@@ -376,6 +379,7 @@ class Json2Splunk(object):
                 # Detect encoding for CSV files
                 encoding = self._detect_encoding(file_path)
 
+
                 with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     file_stream = (line.replace('\x00', '') for line in file_stream)
                     csv_reader = csv.DictReader(file_stream)
@@ -386,7 +390,6 @@ class Json2Splunk(object):
                         except json.JSONDecodeError as e:
                             log.error(f"Record error in {file_path}. Error: {str(e)}")
                             continue
-
                     self._flush_splunk_batch()
                     return True
         except Exception as e:
