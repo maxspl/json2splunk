@@ -16,7 +16,7 @@ import re
 import time
 import csv
 import chardet
-from datetime import datetime
+from datetime import datetime, timezone
 from dateutil.parser import parse
 from functools import reduce
 from multiprocessing import cpu_count
@@ -419,7 +419,11 @@ class Json2Splunk(object):
         def parse_formatted_timestamp(timestamp, fmt):
             """Parse a formatted timestamp using the provided format."""
             try:
-                return datetime.strptime(timestamp, fmt).timestamp()
+                dt = datetime.strptime(timestamp, fmt)
+                # If the datetime is naive, assume UTC
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
             except ValueError:
                 return None
 
@@ -427,7 +431,11 @@ class Json2Splunk(object):
             """Parse a timestamp automatically."""
             log.debug(f'Failed to convert timestamp {timestamp} with format {timestamp_format}. Trying auto mode...')
             try:
-                return parse(timestamp).timestamp()
+                dt = parse(timestamp)
+                # If the datetime is naive, assume UTC
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
             except Exception as e:
                 log.error(f"Failed to convert timestamp with auto mode. Error: {str(e)}.")
                 return None
