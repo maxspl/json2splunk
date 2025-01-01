@@ -48,10 +48,11 @@
    Edit `indexer_patterns.yml` to define the patterns for the files you want to ingest:
    ```yaml
    evtx:
-     name_rex: # regex matching the file name (optional if path_suffix is set). Regex applied on FILE PATH
-     path_suffix: # suffix path to files to index (optional if path_suffix is set). Match ending path. Ex: If "path_suffix: evtx" will match of files ending wih .jsonl under <whatever is the path>/evtx/
+     name_rex: # regex matching the file name (optional if path_suffix or path_rex is set). Regex applied on FILE PATH
+     path_suffix: # suffix path to files to index (optional if name_rex or path_rex is set). Match ending path. Ex: If "path_suffix: evtx" will match of files ending wih .jsonl under <whatever is the path>/evtx/
+     path_rex: #  regex matching the file parent directory (optional if name_rex or path_suffix is set). Regex applied on FILE DIRECTORY (ie. without filename)
      sourcetype: # Splunk sourcetype (optional)
-     timestamp_path: # path to the json key containing the event timestamp. Populates Splunk _time field. Ex: "Event.System.TimeCreated.#attributes.SystemTime"  (optional)
+     timestamp_path: # path to the json key (multiple keys can be specified, the firt one found in the event is use) containing the event timestamp. Populates Splunk _time field. Ex: "Event.System.TimeCreated.#attributes.SystemTime"  (optional)
      timestamp_format: # format of the timestamp extracted. Ex: "%Y-%m-%dT%H:%M:%S.%fZ" (optional)
      host_path: # path to the json key containing the event host. Populates Splunk host field. Ex: Event.System.Computer (optional)
      host_rex: # regex to extract the hostname for the filename or the file path. Populates Splunk host field. (optional)
@@ -107,7 +108,9 @@ For example, the dataframe can be used to review the patterns matched by each fi
       "all"
     ],
     "sourcetype": "_json",
-    "timestamp_path": "Event.System.TimeCreated.#attributes.SystemTime",
+    "timestamp_path": [
+      "Event.System.TimeCreated.#attributes.SystemTime"
+    ],
     "timestamp_format": "%Y-%m-%dT%H:%M:%S.%fZ",
     "host": "Unknown", // Normal as host_path is extracted after the dataframe creation
     "host_path": "Event.System.Computer"
@@ -155,14 +158,17 @@ evtx:
     path_suffix: evtx
     sourcetype: _json
     host_path: "Event.System.Computer" # Extract the host from the event
-    timestamp_path: "Event.System.TimeCreated.#attributes.SystemTime" # Extract the timestamp from the event
+    timestamp_path:  # Extract the timestamp from the event
+      - "Event.System.TimeCreated.#attributes.SystemTime"
+      - "Event.Timestamp"
     timestamp_format: "%Y-%m-%dT%H:%M:%S.%fZ" # Specify the timestamp format
 prefetch:
     name_rex: \.jsonl$
-    path_suffix: prefetch
+    path_rex: ".*prefetch"
     sourcetype: _json
     host_rex: (^[\w-]+)-- # Extract the host from the filename
-    timestamp_path: LastRun # Extract the timestamp from the event
+    timestamp_path: # Extract the timestamp from the event
+      - LastRun
     timestamp_format: "%Y-%m-%d %H:%M:%S" # Specify the timestamp format
 application:
     path_suffix: output/app

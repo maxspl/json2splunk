@@ -3,14 +3,16 @@ evtx:
     path_suffix: evtx
     sourcetype: _json
     host_path: "Event.System.Computer"
-    timestamp_path: "Event.System.TimeCreated.#attributes.SystemTime"
+    timestamp_path: 
+        - "Event.System.TimeCreated.#attributes.SystemTime"
     timestamp_format: "%Y-%m-%dT%H:%M:%S.%fZ"
 prefetch:
     name_rex: \.jsonl$
-    path_suffix: prefetch
+    path_rex: ".*prefetch"
     sourcetype: _json
     host_rex: (^[\w-]+)--
-    timestamp_path: LastRun
+    timestamp_path: 
+        - LastRun
     timestamp_format: "%Y-%m-%d %H:%M:%S"
 reg:
     path_suffix: registry

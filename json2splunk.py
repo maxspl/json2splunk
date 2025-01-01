@@ -16,6 +16,7 @@ import re
 import time
 import csv
 import chardet
+import fnmatch
 from datetime import datetime, timezone
 from dateutil.parser import parse
 from functools import reduce
@@ -88,21 +89,26 @@ class FileMatcher:
 
         Args:
             file_path (Path): The path of the file to check.
-            criteria (dict): A dictionary containing 'name_rex' and 'path_suffix' keys.
+            criteria (dict): A dictionary containing 'name_rex', 'path_suffix' and 'path_rex' keys.
 
         Returns:
             bool: True if the file matches the criteria, False otherwise.
         """
         name_pattern = criteria.get('name_rex')
         path_suffix = criteria.get('path_suffix')
-        # Check if file name matches the name regex pattern
-        if name_pattern and not re.search(name_pattern, str(file_path)):
-            return False
-        # Check if file path matches the path suffix
-        if path_suffix and not str(file_path.parent).endswith(path_suffix.rstrip('/')):
-            return False
-        return True
+        path_pattern = criteria.get('path_rex')
 
+        # If no criteria are set, return False
+        if not (name_pattern or path_suffix or path_pattern):
+            return False
+
+        # Check if any criteria is set and matches
+        match_name = not name_pattern or re.search(name_pattern, str(file_path.name)) # Check if file name matches the name regex pattern
+        match_path = not path_pattern or re.search(path_pattern, str(file_path.parent)) # Check if file path matches the path regex pattern (without the filename)
+        match_suffix = not path_suffix or str(file_path.parent).endswith(path_suffix.rstrip('/')) # Check if file path matches the path suffix
+
+        return match_name and match_path and match_suffix
+        
     def _scan_directory(self, root_dir, test_mode=False):
         """
         Scan the specified directory recursively, matching files against loaded config criteria.
@@ -133,9 +139,9 @@ class FileMatcher:
                     record = {
                         'file_path': str(file_path),
                         'file_name': file_name,
-                        'artifact_name': matched_artifacts if self.test_mode and len(matched_artifacts) > 1 else matched_artifacts[0],
+                        'artifact_name': (', '.join(matched_artifacts) if self.test_mode and len(matched_artifacts) > 1 else matched_artifacts[0]),
                         'sourcetype': matched_criterias[0].get('sourcetype', ''),
-                        'timestamp_path': matched_criterias[0].get('timestamp_path', ''),
+                        'timestamp_path': matched_criterias[0].get('timestamp_path', []),
                         'timestamp_format': matched_criterias[0].get('timestamp_format', ''),
                         'host_path': None
                     }
@@ -401,7 +407,7 @@ class Json2Splunk(object):
 
         Args:
             record (dict): Record to extract timestamp from.
-            timestamp_path (str): Path to the timestamp in the record (dot-separated for nested keys).
+            timestamp_path (list): Path to the timestamp in the record (dot-separated for nested keys).
             timestamp_format (str, optional): Format of the timestamp. Defaults to None.
 
         Returns:
@@ -444,7 +450,10 @@ class Json2Splunk(object):
                 return None
 
         try:
-            timestamp = self._get_from_dict(record, timestamp_path.split('.'))
+            timestamp = next(
+                (self._get_from_dict(record, p.split('.')) for p in timestamp_path if self._get_from_dict(record, p.split('.'))),
+                None
+            )
             if not timestamp:
                 log.error(f"Timestamp {timestamp_path} has not been extracted from record {record}.")
                 return None
