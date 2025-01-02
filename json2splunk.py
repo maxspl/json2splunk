@@ -63,7 +63,7 @@ class FileMatcher:
             patterns_config_path = args.indexer_patterns
         self.config = self.load_config(patterns_config_path)
         self.test_mode = test
-        self.pattern_match_count = {artifact: 0 for artifact in self.config}
+        self.pattern_match_count = {source: 0 for source in self.config}
         self.no_match_count = 0
         self.multi_match_count = 0
 
@@ -127,23 +127,24 @@ class FileMatcher:
 
         for file_path in root_path.rglob('*'):
             if os.path.isfile(file_path):
-                matched_artifacts = []
+                matched_sources = []
                 matched_criterias = []
-                for index, (artifact, criteria) in enumerate(self.config.items()):
+                for index, (source, criteria) in enumerate(self.config.items()):
                     file_name = os.path.basename(str(file_path))
                     if self.match_file(file_path, criteria):
-                        matched_artifacts.append(artifact)
+                        matched_sources.append(source)
                         matched_criterias.append(criteria)
 
-                if matched_artifacts:
+                if matched_sources:
                     record = {
                         'file_path': str(file_path),
                         'file_name': file_name,
-                        'artifact_name': (', '.join(matched_artifacts) if self.test_mode and len(matched_artifacts) > 1 else matched_artifacts[0]),
-                        'sourcetype': matched_criterias[0].get('sourcetype', ''),
+                        'source': (', '.join(matched_sources) if self.test_mode and len(matched_sources) > 1 else matched_sources[0]),
+                        'sourcetype': matched_criterias[0].get('sourcetype', matched_sources[0]),
                         'timestamp_path': matched_criterias[0].get('timestamp_path', []),
                         'timestamp_format': matched_criterias[0].get('timestamp_format', ''),
-                        'host_path': None
+                        'host_path': None,
+                        'artifact': matched_criterias[0].get('artifact', matched_sources[0]) # field artifact
                     }
 
                     # Determine host from the first matched pattern
@@ -151,7 +152,7 @@ class FileMatcher:
                     host_rex = matched_criterias[0].get('host_rex', '')
                     record['host'] = 'Unknown'
                     if host_rex:  # Try to extract host from file name if host_rex defined
-                        criteria = self.config[matched_artifacts[0]]
+                        criteria = self.config[matched_sources[0]]
                         host_match = re.search(host_rex, str(file_path))
                         host = host_match.group(1) if host_match else 'Unknown'
                         record['host'] = host
@@ -161,15 +162,15 @@ class FileMatcher:
                     records.append(record)
 
                     # Update pattern match count for each matched artifact
-                    for artifact in matched_artifacts:
-                        self.pattern_match_count[artifact] += 1
+                    for source in matched_sources:
+                        self.pattern_match_count[source] += 1
 
                 # Produce stats
-                if not matched_artifacts:
+                if not matched_sources:
                     self.no_match_count += 1
-                if len(matched_artifacts) > 1:
+                if len(matched_sources) > 1:
                     self.multi_match_count += 1
-                    file_pattern_matches[str(file_path)] = matched_artifacts
+                    file_pattern_matches[str(file_path)] = matched_sources
 
         return records
 
@@ -200,7 +201,7 @@ class FileMatcher:
         Convert the dataframe into a list of tuples, each representing a file's details.
         """
         if not self.df.is_empty():
-            selected_df = self.df[['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path' ,'artifact_name']]
+            selected_df = self.df[['file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format', 'host_path', 'source', 'artifact']]
         else:
             log.warning("It seems that the patterns matched nothing.")
             exit()  
@@ -213,8 +214,8 @@ class FileMatcher:
         """
         log.info(f"Number of files that matched nothing: {self.no_match_count}")
         log.info(f"Number of files that matched multiple patterns: {self.multi_match_count}")
-        for artifact, count in self.pattern_match_count.items():
-            log.info(f"Number of files that matched pattern '{artifact}': {count}")
+        for source, count in self.pattern_match_count.items():
+            log.info(f"Number of files that matched pattern '{source}': {count}")
 
 
 class Json2Splunk(object):
@@ -348,10 +349,9 @@ class Json2Splunk(object):
                 payload["time"] = epoch_time  
             if host_from_path:
                 payload["host"] = host_from_path.lower().split('.')[0]
-            payload["event"]["artifact"] = artifact_name
             self._send_to_splunk(payload)
 
-        file_path, sourcetype, host, timestamp_path, timestamp_format, host_path, artifact_name = input_tuple
+        file_path, sourcetype, host, timestamp_path, timestamp_format, host_path, source, artifact = input_tuple
 
         # Check if file is empty
         if os.stat(file_path).st_size == 0:
@@ -361,9 +361,13 @@ class Json2Splunk(object):
         try:
             file_extension = os.path.splitext(file_path)[1].lower()
             payload = {
-                "source": file_path,
+                "source": source,
                 "sourcetype": sourcetype,
-                "host": host.lower().split('.')[0]
+                "host": host.lower().split('.')[0],
+                "fields": {
+                    "sourcefile": file_path,
+                    "artifact":artifact
+                    }
             }
             if file_extension == '.json' or file_extension == '.jsonl':
                 # Detect encoding for JSON files

@@ -47,15 +47,16 @@
 4. **Set File Matching Rules**:
    Edit `indexer_patterns.yml` to define the patterns for the files you want to ingest:
    ```yaml
-   evtx:
+   <source_name>:
      name_rex: # regex matching the file name (optional if path_suffix or path_rex is set). Regex applied on FILE PATH
      path_suffix: # suffix path to files to index (optional if name_rex or path_rex is set). Match ending path. Ex: If "path_suffix: evtx" will match of files ending wih .jsonl under <whatever is the path>/evtx/
      path_rex: #  regex matching the file parent directory (optional if name_rex or path_suffix is set). Regex applied on FILE DIRECTORY (ie. without filename)
-     sourcetype: # Splunk sourcetype (optional)
+     sourcetype: # Splunk sourcetype (optional). If not specified, default is source_name
      timestamp_path: # path to the json key (multiple keys can be specified, the firt one found in the event is use) containing the event timestamp. Populates Splunk _time field. Ex: "Event.System.TimeCreated.#attributes.SystemTime"  (optional)
      timestamp_format: # format of the timestamp extracted. Ex: "%Y-%m-%dT%H:%M:%S.%fZ" (optional)
      host_path: # path to the json key containing the event host. Populates Splunk host field. Ex: Event.System.Computer (optional)
      host_rex: # regex to extract the hostname for the filename or the file path. Populates Splunk host field. (optional)
+     artifact: # source_name alernative (optional) - can be useful to define a global name like EVTX where source_name is very specific like windows:evtx:powershell. If not specified, default is source_name.
    ```
 
 ## Usage
@@ -90,7 +91,7 @@ For example, the dataframe can be used to review the patterns matched by each fi
   {
     "file_path": "input_sample/prefetch/SRV-DA09DKL--prefetch-AA4646DB4646A841_2000000016FC0_D000000018CE8_4_TABBY.EXE-D326E1BD.pf_{00000000-0000-0000-0000-000000000000}.data.jsonl",
     "file_name": "SRV-DA09DKL--prefetch-AA4646DB4646A841_2000000016FC0_D000000018CE8_4_TABBY.EXE-D326E1BD.pf_{00000000-0000-0000-0000-000000000000}.data.jsonl",
-    "artifact_name": [
+    "source": [
       "prefetch",
       "all"
     ],
@@ -103,7 +104,7 @@ For example, the dataframe can be used to review the patterns matched by each fi
   {
     "file_path": "input_sample/evtx/SRV-DA09DKL--evtx-AA4646DB4646A841_10000000014B3_E0000000249F8_4_Microsoft-Windows-StorageSettings%4Diagnostic.evtx_{00000000-0000-0000-0000-000000000000}.data.jsonl",
     "file_name": "SRV-DA09DKL--evtx-AA4646DB4646A841_10000000014B3_E0000000249F8_4_Microsoft-Windows-StorageSettings%4Diagnostic.evtx_{00000000-0000-0000-0000-000000000000}.data.jsonl",
-    "artifact_name": [
+    "source": [
       "evtx",
       "all"
     ],
@@ -153,6 +154,15 @@ Each entry specifies a unique pattern to match certain files with specific proce
 **Warning:** If a file matches several artifacts, the first one is selected.
 
 ```yaml
+windows:evtx:powershell:
+    name_rex: Windows_PowerShell.*\.jsonl$
+    path_suffix: evtx
+    host_path: "Event.System.Computer" # Extract the host from the event
+    timestamp_path:  # Extract the timestamp from the event
+      - "Event.System.TimeCreated.#attributes.SystemTime"
+      - "Event.Timestamp"
+    timestamp_format: "%Y-%m-%dT%H:%M:%S.%fZ" # Specify the timestamp format
+    artifact: EVTX
 evtx:
     name_rex: \.jsonl$
     path_suffix: evtx

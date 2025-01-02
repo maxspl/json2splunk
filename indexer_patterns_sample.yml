@@ -1,3 +1,12 @@
+windows:evtx:powershell:
+    name_rex: Windows_PowerShell.*\.jsonl$
+    path_suffix: evtx
+    host_path: "Event.System.Computer" # Extract the host from the event
+    timestamp_path:  # Extract the timestamp from the event
+      - "Event.System.TimeCreated.#attributes.SystemTime"
+      - "Event.Timestamp"
+    timestamp_format: "%Y-%m-%dT%H:%M:%S.%fZ" # Specify the timestamp format
+    artifact: EVTX
 evtx:
     name_rex: \.jsonl$
     path_suffix: evtx
