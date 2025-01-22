@@ -16,7 +16,6 @@ import re
 import time
 import csv
 import chardet
-import fnmatch
 from datetime import datetime, timezone
 from dateutil.parser import parse
 from functools import reduce
@@ -43,8 +42,9 @@ LOG_VERBOSITY = {
 # Increase CSV field size limit to handle large fields
 csv.field_size_limit(sys.maxsize)
 
+
 class FileMatcher:
-    def __init__(self, config: str, test: bool):
+    def __init__(self, config: str, test: bool, extensions: str):
         """
         Initialize the FileMatcher object with configuration and test mode settings.
 
@@ -52,6 +52,7 @@ class FileMatcher:
             config (str): Name or full path to the YAML configuration file specifying matching criteria.
             test (bool): Flag to indicate whether the class should run in test mode, affecting
                             how artifacts are recorded and how output is generated.
+            extensions (str): Extensions used for global filtering (optional).
         """
         # Define path of patterns configuration file
         if config == 'indexer_patterns.yml':
@@ -61,6 +62,17 @@ class FileMatcher:
             patterns_config_path = absolute_path
         else:
             patterns_config_path = args.indexer_patterns
+        
+        # Extract optional extensions
+        self.extensions = extensions
+        if self.extensions:
+            try:
+                extensions = extensions.split(',')
+                self.extensions = [ext.strip() for ext in extensions]  # Remove any extra spaces
+            except Exception as e:
+                self.extensions = None
+                log.error(f"Submitted extensions list doesn't seem to be formatted correctly. Error: {str(e)}")
+        
         self.config = self.load_config(patterns_config_path)
         self.test_mode = test
         self.pattern_match_count = {source: 0 for source in self.config}
@@ -103,9 +115,9 @@ class FileMatcher:
             return False
 
         # Check if any criteria is set and matches
-        match_name = not name_pattern or re.search(name_pattern, str(file_path.name)) # Check if file name matches the name regex pattern
-        match_path = not path_pattern or re.search(path_pattern, str(file_path.parent)) # Check if file path matches the path regex pattern (without the filename)
-        match_suffix = not path_suffix or str(file_path.parent).endswith(path_suffix.rstrip('/')) # Check if file path matches the path suffix
+        match_name = not name_pattern or re.search(name_pattern, str(file_path.name))  # Check if file name matches the name regex pattern
+        match_path = not path_pattern or re.search(path_pattern, str(file_path.parent))  # Check if file path matches the path regex pattern (without the filename)
+        match_suffix = not path_suffix or str(file_path.parent).endswith(path_suffix.rstrip('/'))  # Check if file path matches the path suffix
 
         return match_name and match_path and match_suffix
         
@@ -121,11 +133,27 @@ class FileMatcher:
         Returns:
             list: A list of records containing details about each matched file.
         """
-        records = []
-        root_path = Path(root_dir)
-        file_pattern_matches = {}
 
-        for file_path in root_path.rglob('*'):
+        def _walk_directory(directory, exts=None):
+            """
+            Recursively walk the directory using os.scandir, yielding file paths.
+            If `exts` is provided, only yield files whose names end with an extension in `exts`.
+            """
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        # Recurse into subdirectories
+                        yield from _walk_directory(entry.path, exts)
+                    else:
+                        # If extensions are specified, check if entry name ends with any of them
+                        if exts is None or any(entry.name.endswith(ext) for ext in exts):
+                            yield Path(entry.path)
+
+        records = []
+        file_pattern_matches = {}
+        
+        all_files = _walk_directory(root_dir, self.extensions if self.extensions else None)
+        for file_path in all_files:
             if os.path.isfile(file_path):
                 matched_sources = []
                 matched_criterias = []
@@ -144,7 +172,7 @@ class FileMatcher:
                         'timestamp_path': matched_criterias[0].get('timestamp_path', []),
                         'timestamp_format': matched_criterias[0].get('timestamp_format', ''),
                         'host_path': None,
-                        'artifact': matched_criterias[0].get('artifact', matched_sources[0]) # field artifact
+                        'artifact': matched_criterias[0].get('artifact', matched_sources[0])  # field artifact
                     }
 
                     # Determine host from the first matched pattern
@@ -366,8 +394,8 @@ class Json2Splunk(object):
                 "host": host.lower().split('.')[0],
                 "fields": {
                     "sourcefile": file_path,
-                    "artifact":artifact
-                    }
+                    "artifact": artifact
+                }
             }
             if file_extension == '.json' or file_extension == '.jsonl':
                 # Detect encoding for JSON files
@@ -388,7 +416,6 @@ class Json2Splunk(object):
             elif file_extension == '.csv':
                 # Detect encoding for CSV files
                 encoding = self._detect_encoding(file_path)
-
 
                 with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     file_stream = (line.replace('\x00', '') for line in file_stream)
@@ -436,6 +463,9 @@ class Json2Splunk(object):
                 # If the datetime is naive, assume UTC
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
+                if dt.timestamp() < 0:
+                    log.debug(f"Timestamp {timestamp} is negative.")
+                    return None
                 return dt.timestamp()
             except ValueError:
                 return None
@@ -448,6 +478,9 @@ class Json2Splunk(object):
                 # If the datetime is naive, assume UTC
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
+                if dt.timestamp() < 0:
+                    log.debug(f"Timestamp {timestamp} is negative.")
+                    return None
                 return dt.timestamp()
             except Exception as e:
                 log.error(f"Failed to convert timestamp with auto mode. Error: {str(e)}.")
@@ -484,7 +517,6 @@ class Json2Splunk(object):
         except Exception as e:
             log.error(f"Failed to extract timestamp. Error: {str(e)}")
             return None
-
 
     def _send_to_splunk(self, payload):
         if not self._is_test:
@@ -548,6 +580,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--indexer_patterns', help="Configuration for files pattern definition. Default is indexer_patterns.yml.", default='indexer_patterns.yml')
 
+    parser.add_argument('--ext', help="Only search for defined list (comma separated) of extensions. Useful to save time in large files datasets. Example: --ext \".json,.csv,.jsonl\"", default=None)
+
     args = parser.parse_args()
 
     log.basicConfig(format=LOG_FORMAT, level=LOG_VERBOSITY[args.verbosity], datefmt='%Y-%m-%d %I:%M:%S')
@@ -556,7 +590,7 @@ if __name__ == "__main__":
     log.info(f"Nb of CPUs : {args.nb_cpu}")
 
     # Build dataframe with all files to index    
-    file_matcher = FileMatcher(args.indexer_patterns, args.test)
+    file_matcher = FileMatcher(args.indexer_patterns, args.test, args.ext)
     file_matcher.create_dataframe(args.input)
     file_matcher.print_statistics()
     # Extract tuples ('file_path', 'sourcetype', 'host', 'timestamp_path', 'timestamp_format')
@@ -574,4 +608,3 @@ if __name__ == "__main__":
     log.info(f"Finished in {end_time - start_time:.2f} seconds")
 
 # curl -k  https://host.docker.internal:8089/services/data/inputs/http
-

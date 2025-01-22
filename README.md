@@ -67,6 +67,7 @@ Run the script with the required parameters. Example usage:
 python json2splunk.py --input /path/to/logs --index my_index
 python json2splunk.py --input /path/to/logs --index my_index --config_spl /opt/json2splunk/splunk_configuration.yml --indexer_patterns /opt/json2splunk/indexer_patterns.yml
 python json2splunk.py --input /path/to/logs --index my_index --nb_cpu 4
+python json2splunk.py --input /path/to/logs --index my_index --ext ".csv,.jsonl"
 ```
 
 ### Parameters
@@ -77,6 +78,7 @@ python json2splunk.py --input /path/to/logs --index my_index --nb_cpu 4
 - `--test`: Optional. Enables test mode where no data is sent to Splunk. Useful for debugging.
 - `--config_spl`: Optional. Specifies the path to the Splunk configuration file. Defaults to `splunk_configuration.yml`.
 - `--indexer_patterns`: Optional. Specifies the path to the file patterns configuration. Defaults to `indexer_patterns.yml`.
+- `--ext`: Optional. Specifies a list of extensions to prefilter the input directory. Defaults is None.
 
 ### Test Mode
 
