@@ -2,8 +2,8 @@
 # !/usr/bin/env python
 
 __progname__ = "json2splunk"
-__date__ = "2024-06-19"
-__version__ = "0.1"
+__date__ = "2025-03-14"
+__version__ = "0.2"
 __author__ = "maxspl"
 
 # Standard library imports
@@ -92,6 +92,11 @@ class FileMatcher:
         """
         with open(config_path, 'r') as file:
             config = yaml.safe_load(file)
+
+            data_splunk = config.get('splunk',None)
+            if data_splunk:
+                config = data_splunk
+
         return config
 
     @staticmethod
@@ -379,6 +384,19 @@ class Json2Splunk(object):
                 payload["host"] = host_from_path.lower().split('.')[0]
             self._send_to_splunk(payload)
 
+        def process_integrity(meta_data):
+            integrity_payload = {
+                "source": "json2splunk:integrity",
+                "sourcetype": "json2splunk:integrity",
+                "host": host.lower().split('.')[0],
+                "fields": {
+                    "sourcefile": "json2splunk:integrity",
+                    "artifact":"json2splunk:integrity"
+                }
+            }
+            integrity_payload["event"] = meta_data
+            self._send_to_splunk(integrity_payload)
+
         file_path, sourcetype, host, timestamp_path, timestamp_format, host_path, source, artifact = input_tuple
 
         # Check if file is empty
@@ -397,6 +415,12 @@ class Json2Splunk(object):
                     "artifact": artifact
                 }
             }
+
+            meta_data = {
+                "input_file": file_path, 
+                "nb_records": 0
+            }
+
             if file_extension == '.json' or file_extension == '.jsonl':
                 # Detect encoding for JSON files
                 encoding = self._detect_encoding(file_path)
@@ -404,12 +428,13 @@ class Json2Splunk(object):
                 with open(file_path, "r", encoding=encoding, errors='replace') as file_stream:
                     for record_line in file_stream:
                         try:
+                            meta_data['nb_records'] += 1
                             record = json.loads(record_line)
                             process_records(record)
                         except json.JSONDecodeError as e:
                             log.error(f"Record error in {file_path}. Error: {str(e)}")
                             continue
-
+                    process_integrity(meta_data)
                     self._flush_splunk_batch()
                     return True
 
@@ -422,11 +447,13 @@ class Json2Splunk(object):
                     csv_reader = csv.DictReader(file_stream)
                     for record_line in csv_reader:
                         try:
+                            meta_data['nb_records'] += 1
                             record = record_line
                             process_records(record)
                         except json.JSONDecodeError as e:
                             log.error(f"Record error in {file_path}. Error: {str(e)}")
                             continue
+                    process_integrity(meta_data)
                     self._flush_splunk_batch()
                     return True
         except Exception as e:
@@ -449,7 +476,7 @@ class Json2Splunk(object):
             try:
                 int_timestamp = int(timestamp)
                 if int_timestamp < 0:
-                    log.debug(f"Timestamp {int_timestamp} is negative.")
+                    log.debug(f"Timestamp {timestamp} is negative.")
                     return None
                 # Consider the timestamp is in milliseconds or more
                 return int_timestamp / 10 ** (len(str(timestamp)) - 10)
@@ -507,8 +534,11 @@ class Json2Splunk(object):
             # Try parsing using the provided format
             if timestamp_format and timestamp_format != r'%s':
                 epoch_time = parse_formatted_timestamp(timestamp, timestamp_format)
-                if epoch_time is not None:
+                if epoch_time is not None and epoch_time > 0:
                     return epoch_time
+                elif epoch_time < 0:
+                    log.debug(f"Timestamp {timestamp} is negative.")
+                    return None
                 else:
                     log.error(f"Failed to convert timestamp {timestamp} with format {timestamp_format}.")
             # Try auto-parsing
