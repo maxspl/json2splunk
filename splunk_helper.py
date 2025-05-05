@@ -123,6 +123,9 @@ class SplunkHelper(object):
             return True
 
         else:
+            # TODO: Find a better way to handle this case
+            if 'already exists' in response.text:
+                return True
             log.error("Unable to create index {index}".format(index=index))
             log.error("{message}".format(message=response.text))
             return False
