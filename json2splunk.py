@@ -325,7 +325,7 @@ class Json2Splunk(object):
                 self._hec_server.http_event_server_ssl = True
                 self._hec_server.index = index
                 self._hec_server.input_type = "json"
-                self._hec_server.popNullFields = True
+                self._hec_server.popNullFields = False
 
                 return True
 
