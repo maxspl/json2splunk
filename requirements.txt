@@ -4,3 +4,4 @@ polars
 pyyaml
 mpire
 chardet
+python-dateutil
